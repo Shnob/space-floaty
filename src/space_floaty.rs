@@ -93,6 +93,7 @@ fn setup_game(
     let rocket_engine_audio = audio
         .play(asset_server.load("sounds/rocket_engine.ogg"))
         .looped()
+        .with_volume(0f64)
         .handle();
 
     let reddy_the_rocket = commands
@@ -345,13 +346,13 @@ fn gamepad_connections(
                         } else if gamepaddata.b.is_none() {
                             let _ = gamepaddata.b.insert(conn_event.gamepad);
                         };
-                    },
+                    }
                     bevy::input::gamepad::GamepadConnection::Disconnected => {
                         gamepaddata.a = gamepaddata.a.filter(|g| g.id != conn_event.gamepad.id);
                         gamepaddata.b = gamepaddata.b.filter(|g| g.id != conn_event.gamepad.id);
-                    },
+                    }
                 }
-            },
+            }
             _ => (),
         }
     }

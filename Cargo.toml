@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 bevy_kira_audio = "0.15.0"
 rand = "0.8.5"
-# WARN: Disable dynamic_linking on final build
 
 [profile.dev]
 opt-level = 1
@@ -33,8 +32,8 @@ features = [
     "bevy_render",           # Rendering framework core
     "bevy_core_pipeline",    # Common rendering abstractions
     "bevy_sprite",           # 2D (sprites) rendering
-    "bevy_pbr",              # 3D (physically-based) rendering
-    "bevy_gltf",             # GLTF 3D assets format support
+    #"bevy_pbr",              # 3D (physically-based) rendering
+    #"bevy_gltf",             # GLTF 3D assets format support
     "bevy_text",             # Text/font rendering
     "bevy_ui",               # UI toolkit
     "animation",             # Animation support
@@ -48,7 +47,7 @@ features = [
     "hdr",    # HDR images
     "ktx2",   # Preferred format for GPU textures
     "zstd",   # ZSTD compression support in KTX2 files
-    "vorbis", # Audio: OGG Vorbis
+    #"vorbis", # Audio: OGG Vorbis
 
     # These are other features that may be of interest:
     # (add any of these that you need)
@@ -67,13 +66,13 @@ features = [
     "tga",             # Truevision Targa image format
     "exr",             # OpenEXR advanced image format
     "basis-universal", # Basis Universal GPU texture compression format
-    "flac",            # Audio: FLAC lossless format
-    "mp3",             # Audio: MP3 format (not recommended)
-    "wav",             # Audio: Uncompressed WAV
-    "symphonia-all",   # All Audio formats supported by the Symphonia library
+    #"flac",            # Audio: FLAC lossless format
+    #"mp3",             # Audio: MP3 format (not recommended)
+    #"wav",             # Audio: Uncompressed WAV
+    #"symphonia-all",   # All Audio formats supported by the Symphonia library
 
     # Development/Debug features:
-    "dynamic_linking", # Dynamic linking for faster compile-times
+    #"dynamic_linking", # Dynamic linking for faster compile-times
     #"trace",           # Enable tracing for performance measurement
     #"detailed_trace",  # Make traces more verbose
     #"trace_tracy",     # Tracing using `tracy`
