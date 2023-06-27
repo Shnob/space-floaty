@@ -1,4 +1,5 @@
 use bevy::{core_pipeline::bloom::BloomSettings, prelude::*};
+use bevy_kira_audio::prelude::{*, Audio};
 
 pub struct SpaceFloaty;
 
@@ -30,6 +31,7 @@ fn setup_game(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut wins: Query<&mut Window>,
+    audio: Res<Audio>,
 ) {
     // Camera
     commands.spawn((
@@ -97,7 +99,12 @@ fn setup_game(
                 transform: Transform::from_xyz(0.0, 300.0, -1.0),
                 ..default()
             },
-            PlayerController::new(6.0, 0.1, GamepadID::A),
+            PlayerController::new(
+                6.0,
+                0.1,
+                GamepadID::A,
+                None,
+            ),
             GravityEffected,
             CameraTrack(0.02),
         ))
@@ -129,7 +136,7 @@ fn setup_game(
                 transform: Transform::from_xyz(0.0, -300.0, -1.0),
                 ..default()
             },
-            PlayerController::new(6.0, 0.1, GamepadID::B),
+            PlayerController::new(6.0, 0.1, GamepadID::B, None),
             GravityEffected,
         ))
         .id();
@@ -177,16 +184,18 @@ struct PlayerController {
     rot: f32,
     thrust_on: bool,
     gamepad: GamepadID,
+    sound: Option<Handle<AudioSink>>,
 }
 
 impl PlayerController {
-    fn new(acc: f32, rot: f32, gamepad: GamepadID) -> Self {
+    fn new(acc: f32, rot: f32, gamepad: GamepadID, sound: Option<Handle<AudioSink>>) -> Self {
         Self {
             vel: Vec3::new(0.0, 0.0, 0.0),
             acc,
             rot,
             thrust_on: false,
             gamepad,
+            sound,
         }
     }
 }
@@ -194,22 +203,24 @@ impl PlayerController {
 fn player_input(
     query: Query<(&mut Transform, &mut PlayerController)>,
     axes: Res<Axis<GamepadAxis>>,
-    buttons: Res<Input<GamepadButton>>,
+    button_axes: Res<Axis<GamepadButton>>,
     gamepaddata: Res<GamepadData>,
     keys: Res<Input<KeyCode>>,
+    audio_sinks: Res<Assets<AudioSink>>,
 ) {
     if gamepaddata.a.is_none() {
-        player_kb_input(keys, query);
+        player_kb_input(keys, query, audio_sinks);
     } else {
-        player_gamepad_input(query, axes, buttons, gamepaddata);
+        player_gamepad_input(query, axes, button_axes, gamepaddata, audio_sinks);
     }
 }
 
 fn player_gamepad_input(
     mut query: Query<(&mut Transform, &mut PlayerController)>,
     axes: Res<Axis<GamepadAxis>>,
-    _buttons: Res<Input<GamepadButton>>,
+    button_axes: Res<Axis<GamepadButton>>,
     gamepaddata: Res<GamepadData>,
+    audio_sinks: Res<Assets<AudioSink>>,
 ) {
     for (mut t, mut pc) in query.iter_mut() {
         if let Some(gamepad) = match pc.gamepad {
@@ -226,13 +237,26 @@ fn player_gamepad_input(
                 axis_type: GamepadAxisType::LeftStickY,
             });
 
+            let rt2 = button_axes.get(GamepadButton {
+                gamepad,
+                button_type: GamepadButtonType::RightTrigger2,
+            });
+
             if let Some(lsx) = lsx {
                 if lsx.abs() > 0.05 {
                     t.rotate_z(-pc.rot * lsx);
                 }
             }
 
-            if let Some(lsy) = lsy {
+            if let Some(rt2) = rt2 {
+                if rt2 > 0.02 {
+                    pc.thrust_on = true;
+                    let force = rt2 * pc.acc * t.up();
+                    pc.vel += force;
+                } else {
+                    pc.thrust_on = false;
+                }
+            } else if let Some(lsy) = lsy {
                 if lsy > 0.05 {
                     pc.thrust_on = true;
                     let force = lsy.max(0.0) * pc.acc * t.up();
@@ -248,6 +272,7 @@ fn player_gamepad_input(
 fn player_kb_input(
     keys: Res<Input<KeyCode>>,
     mut query: Query<(&mut Transform, &mut PlayerController)>,
+    audio_sinks: Res<Assets<AudioSink>>,
 ) {
     for (mut t, mut pc) in query.iter_mut() {
         let acc = {
@@ -259,9 +284,6 @@ fn player_kb_input(
                 acc += pc.acc * t.up();
                 engine_on = true;
             }
-            //if keys.pressed(KeyCode::S) {
-            //    acc -= pc.acc * t.up();
-            //}
             if keys.pressed(KeyCode::D) {
                 t.rotate_z(-pc.rot);
             }
