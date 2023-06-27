@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use bevy::{core_pipeline::bloom::BloomSettings, prelude::*};
-use bevy_kira_audio::prelude::{*, Audio};
+use bevy_kira_audio::prelude::{Audio, *};
 
 pub struct SpaceFloaty;
 
@@ -88,6 +90,11 @@ fn setup_game(
     const ROCKET_SCALE: f32 = 80.0;
     const ASTRO_BABY_SCALE: f32 = 80.0;
 
+    let rocket_engine_audio = audio
+        .play(asset_server.load("sounds/rocket_engine.ogg"))
+        .looped()
+        .handle();
+
     let reddy_the_rocket = commands
         .spawn((
             SpriteBundle {
@@ -99,12 +106,7 @@ fn setup_game(
                 transform: Transform::from_xyz(0.0, 300.0, -1.0),
                 ..default()
             },
-            PlayerController::new(
-                6.0,
-                0.1,
-                GamepadID::A,
-                None,
-            ),
+            PlayerController::new(6.0, 0.1, GamepadID::A, Some(rocket_engine_audio)),
             GravityEffected,
             CameraTrack(0.02),
         ))
@@ -184,11 +186,11 @@ struct PlayerController {
     rot: f32,
     thrust_on: bool,
     gamepad: GamepadID,
-    sound: Option<Handle<AudioSink>>,
+    sound: Option<Handle<AudioInstance>>,
 }
 
 impl PlayerController {
-    fn new(acc: f32, rot: f32, gamepad: GamepadID, sound: Option<Handle<AudioSink>>) -> Self {
+    fn new(acc: f32, rot: f32, gamepad: GamepadID, sound: Option<Handle<AudioInstance>>) -> Self {
         Self {
             vel: Vec3::new(0.0, 0.0, 0.0),
             acc,
@@ -201,103 +203,76 @@ impl PlayerController {
 }
 
 fn player_input(
-    query: Query<(&mut Transform, &mut PlayerController)>,
+    mut query: Query<(&mut Transform, &mut PlayerController)>,
     axes: Res<Axis<GamepadAxis>>,
     button_axes: Res<Axis<GamepadButton>>,
     gamepaddata: Res<GamepadData>,
     keys: Res<Input<KeyCode>>,
-    audio_sinks: Res<Assets<AudioSink>>,
+    mut audio_instances: ResMut<Assets<AudioInstance>>,
 ) {
-    if gamepaddata.a.is_none() {
-        player_kb_input(keys, query, audio_sinks);
-    } else {
-        player_gamepad_input(query, axes, button_axes, gamepaddata, audio_sinks);
+    for (mut t, mut pc) in query.iter_mut() {
+        let gamepad = match pc.gamepad {
+            GamepadID::A => gamepaddata.a,
+            GamepadID::B => gamepaddata.b,
+        };
+        let controls: (f32, f32) = match gamepad {
+            Some(gamepad) => player_gamepad_input(gamepad, &axes, &button_axes),
+            None => player_kb_input(&keys),
+        };
+
+        t.rotate_z(-pc.rot * controls.0);
+
+        let force = controls.1 * pc.acc * t.up();
+
+        pc.thrust_on = force.length_squared() > 0.0;
+
+        if let Some(sound) = &pc.sound {
+            if let Some(sound) = audio_instances.get_mut(&sound) {
+                sound.set_volume(
+                    controls.1 as f64,
+                    AudioTween::linear(Duration::new(0, 1000000)),
+                );
+            }
+        }
+
+        pc.vel += force;
     }
 }
 
 fn player_gamepad_input(
-    mut query: Query<(&mut Transform, &mut PlayerController)>,
-    axes: Res<Axis<GamepadAxis>>,
-    button_axes: Res<Axis<GamepadButton>>,
-    gamepaddata: Res<GamepadData>,
-    audio_sinks: Res<Assets<AudioSink>>,
-) {
-    for (mut t, mut pc) in query.iter_mut() {
-        if let Some(gamepad) = match pc.gamepad {
-            GamepadID::A => gamepaddata.a,
-            GamepadID::B => gamepaddata.b,
-        } {
-            let lsx = axes.get(GamepadAxis {
-                gamepad,
-                axis_type: GamepadAxisType::LeftStickX,
-            });
+    gamepad: Gamepad,
+    axes: &Res<Axis<GamepadAxis>>,
+    button_axes: &Res<Axis<GamepadButton>>,
+) -> (f32, f32) {
+    let lsx = axes.get(GamepadAxis {
+        gamepad,
+        axis_type: GamepadAxisType::LeftStickX,
+    });
 
-            let lsy = axes.get(GamepadAxis {
-                gamepad,
-                axis_type: GamepadAxisType::LeftStickY,
-            });
+    let lsy = axes.get(GamepadAxis {
+        gamepad,
+        axis_type: GamepadAxisType::LeftStickY,
+    });
 
-            let rt2 = button_axes.get(GamepadButton {
-                gamepad,
-                button_type: GamepadButtonType::RightTrigger2,
-            });
+    let rt2 = button_axes.get(GamepadButton {
+        gamepad,
+        button_type: GamepadButtonType::RightTrigger2,
+    });
 
-            if let Some(lsx) = lsx {
-                if lsx.abs() > 0.05 {
-                    t.rotate_z(-pc.rot * lsx);
-                }
-            }
-
-            if let Some(rt2) = rt2 {
-                if rt2 > 0.02 {
-                    pc.thrust_on = true;
-                    let force = rt2 * pc.acc * t.up();
-                    pc.vel += force;
-                } else {
-                    pc.thrust_on = false;
-                }
-            } else if let Some(lsy) = lsy {
-                if lsy > 0.05 {
-                    pc.thrust_on = true;
-                    let force = lsy.max(0.0) * pc.acc * t.up();
-                    pc.vel += force;
-                } else {
-                    pc.thrust_on = false;
-                }
-            }
-        }
-    }
+    (
+        lsx.map(|f| if f.abs() > 0.05 { f } else { 0.0 })
+            .unwrap_or(0.0),
+        rt2.map(|f| if f.abs() > 0.05 { f } else { 0.0 })
+            .or(lsy.map(|f| if f.abs() > 0.05 { f } else { 0.0 }))
+            .unwrap_or(0.0),
+    )
 }
 
-fn player_kb_input(
-    keys: Res<Input<KeyCode>>,
-    mut query: Query<(&mut Transform, &mut PlayerController)>,
-    audio_sinks: Res<Assets<AudioSink>>,
-) {
-    for (mut t, mut pc) in query.iter_mut() {
-        let acc = {
-            let mut acc = Vec3::new(0.0, 0.0, 0.0);
-
-            let mut engine_on = false;
-
-            if keys.pressed(KeyCode::W) {
-                acc += pc.acc * t.up();
-                engine_on = true;
-            }
-            if keys.pressed(KeyCode::D) {
-                t.rotate_z(-pc.rot);
-            }
-            if keys.pressed(KeyCode::A) {
-                t.rotate_z(pc.rot);
-            }
-
-            pc.thrust_on = engine_on;
-
-            acc
-        };
-
-        pc.vel += acc;
-    }
+fn player_kb_input(keys: &Res<Input<KeyCode>>) -> (f32, f32) {
+    (
+        (keys.pressed(KeyCode::D) as i32 - keys.pressed(KeyCode::A) as i32) as f32,
+        keys.pressed(KeyCode::W) as i32 as f32,
+    )
 }
 
 fn player_move(time: Res<Time>, mut query: Query<(&mut Transform, &PlayerController)>) {
